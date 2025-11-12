@@ -1,0 +1,197 @@
+---
+title: "Projek Analisis Multivariat"
+author: "Kelompok 3_Analisis Multivariat 2023F"
+date: "2025-06-05"
+output: html_document
+---
+
+# Install dan load package yang diperlukan
+```{r}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(DataExplorer)
+library(lavaan)
+library(semPlot)
+library(psych)
+library(MVN)
+library(car)
+```
+
+# Load data
+```{r}
+data <- read_excel("C:/Users/eliza/Downloads/2. Response(1).xlsx")
+
+head(data)
+names(data)
+```
+
+# Missing value
+```{r}
+sum(is.na(data))
+p <- ncol(data)
+```
+
+# Duplicate data
+```{r}
+duplikat <- data[duplicated(data), ]
+
+print(duplikat)
+sum(duplicated(data))
+```
+
+```{r}
+data_clean <- data %>% distinct()
+data_clean <- data[!duplicated(data), ]
+```
+
+
+# EDA
+
+## Statistik deskriptif
+```{r}
+summary(data_clean)
+```
+
+## Struktur data
+```{r}
+str(data_clean)
+```
+
+## Distribusi untuk semua variabel numerik
+```{r}
+plot_histogram(data_clean)
+```
+
+## Korelasi antar variabel numerik
+```{r}
+plot_correlation(data_clean, type = "continuous")
+```
+
+## Distribusi perkolom
+```{r}
+numeric_data <- data_clean %>% select(where(is.numeric))
+for (col in names(numeric_data)) {
+  print(
+    ggplot(numeric_data, aes_string(y = col)) +
+      geom_boxplot(fill = "skyblue") +
+      labs(title = paste("Boxplot of", col), y = col)
+  )
+}
+```
+
+## Boxplot per kolom
+```{r}
+boxplot(numeric_data,
+        main = "Boxplot Semua Variabel Numerik (Base R)",
+        col = "skyblue",
+        las = 2,      # Rotasi label sumbu x
+        outline = TRUE)
+```
+
+# Uji Asumsi SEM
+
+## Uji Normalitas Multivariat
+```{r}
+mardia(numeric_data)
+```
+
+## Uji Multikolinearitas
+```{r}
+vif_results <- data.frame(
+  Indikator = character(),
+  VIF = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (var in colnames(numeric_data)) {
+  predictors <- setdiff(colnames(numeric_data), var)
+  formula <- as.formula(paste(var, "~", paste(predictors, collapse = " + ")))
+  
+  model <- lm(formula, data = numeric_data)
+  
+  r2 <- summary(model)$r.squared
+  
+  vif_val <- 1 / (1 - r2)
+  
+  vif_results <- rbind(vif_results, data.frame(Indikator = var, VIF = round(vif_val, 4)))
+}
+
+print(vif_results)
+```
+
+# Uji Validitas dan Reliabilitas
+
+## Uji validitas konstruk 
+```{r}
+model_cfa <- '
+  TSC =~ TSC1 + TSC2 + TSC3 + TSC4 + TSC5
+  TE  =~ TE1 + TE2 + TE3 + TE4 + TE5
+  EE  =~ EE1 + EE2 + EE3 + EE4 + EE5
+  DE  =~ DE1 + DE2 + DE3
+  RPA =~ RPA1 + RPA2 + RPA3 + RPA4 + RPA5
+'
+
+fit_cfa <- cfa(model_cfa, data = numeric_data)
+
+summary(fit_cfa, fit.measures = TRUE, standardized = TRUE)
+```
+
+## Uji reliabilitas konstruk
+```{r}
+TSC_items <- numeric_data %>% select(TSC1, TSC2, TSC3, TSC4, TSC5)
+TE_items  <- numeric_data %>% select(TE1, TE2, TE3, TE4, TE5)
+EE_items  <- numeric_data %>% select(EE1, EE2, EE3, EE4, EE5)
+DE_items  <- numeric_data %>% select(DE1, DE2, DE3)
+RPA_items <- numeric_data %>% select(RPA1, RPA2, RPA3, RPA4, RPA5)
+
+# Hitung Cronbach's Alpha
+alpha(TSC_items)
+alpha(TE_items)
+alpha(EE_items)
+alpha(DE_items)
+alpha(RPA_items)
+```
+
+# Modeling SEM
+```{r}
+model_sem <- '
+  # Measurement Model
+  TSC =~ TSC1 + TSC2 + TSC3 + TSC4 + TSC5
+  TE  =~ TE1 + TE2 + TE3 + TE5
+  EE  =~ EE1 + EE2 + EE3 + EE4
+  DE  =~ DE1 + DE2 + DE3
+  RPA =~ RPA1 + RPA2 + RPA3 + RPA4
+
+  # Structural Model
+  TE  ~ TSC
+  EE  ~ TSC + TE
+  DE  ~ TSC + TE
+  RPA ~ TSC + TE
+'
+
+# Estimasi model SEM
+fit_sem <- sem(model_sem, data = numeric_data, estimator = "MLR")
+
+# Ringkasan hasil SEM
+summary(fit_sem, fit.measures = TRUE, standardized = TRUE)
+
+```
+
+```{r}
+semPaths(
+  fit_sem,
+  what = "std",          
+  layout = "spring",     
+  edge.label.cex = 0.9,  
+  sizeMan = 4,           
+  sizeLat = 5,          
+  nCharNodes = 0,        
+  residuals = FALSE,     
+  optimizeLatRes = TRUE, 
+  edge.color = "black",
+  asize = 3
+)
+
+```
